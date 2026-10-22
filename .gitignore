@@ -1,0 +1,44 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Runtime data ---
+data/
+*.sqlite
+*.sqlite3
+*.db
+var/
+tmp/
+.cache/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.wrangler/
+node_modules/
+worker-configuration.d.ts
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/

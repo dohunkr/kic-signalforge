@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>KIC SignalForge — 근거 중심 리서치 브리핑</title>
+<meta name="description" content="공개 금융·기업 자료를 바탕으로 근거와 반대 근거, 상승·하락 확률을 함께 제시하는 리서치 보조 Agent" />
+<link rel="preconnect" href="https://api.fontshare.com" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+<!-- ================= NAV ================= -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="/">
+      <span class="brand-mark">SF</span>
+      <span class="brand-text">SignalForge</span>
+    </a>
+    <div class="nav-links">
+      <a href="#chat" class="nav-link is-active">분석</a>
+      <a href="#sources" class="nav-link">자료 출처</a>
+      <a href="#method" class="nav-link">분석 방법론</a>
+    </div>
+    <div class="nav-right">
+      <span class="status-chip" id="status-chip">확인 중…</span>
+      <button class="btn-secondary btn-sm" id="new-chat" type="button">새 분석</button>
+      <button class="icon-btn" id="theme-toggle" type="button" title="라이트 / 다크 전환" aria-label="테마 전환">◐</button>
+    </div>
+  </div>
+</nav>
+
+<!-- ================= MAIN ================= -->
+<main class="container">
+  <div class="layout">
+
+    <!-- ---------- 대화 열 ---------- -->
+    <section class="chat" id="chat">
+      <header class="chat-head" id="chat-head">
+        <p class="overline">KIC AI AGENT CONTEST · INVESTMENT RESEARCH</p>
+        <h1 class="display">근거로 살펴보는 투자 전망</h1>
+        <p class="lede">
+          궁금한 기업이나 산업을 입력하면 공개 자료를 찾아 분석합니다.<br />
+          상승·하락 확률부터 투자 잔고 기준 시뮬레이션까지 한 화면에서 확인하세요.
+        </p>
+      </header>
+
+      <div class="messages" id="messages"></div>
+
+      <!-- 빠른 예시 -->
+      <div class="examples" id="examples">
+        <p class="overline">EXAMPLES</p>
+        <div class="chip-row" id="example-chips"></div>
+      </div>
+
+      <!-- 입력 -->
+      <form class="composer" id="composer">
+        <div class="composer-box">
+          <label class="composer-label" for="composer-input" id="composer-label">무엇이 궁금하신가요?</label>
+          <textarea
+            id="composer-input"
+            rows="1"
+            placeholder="예) 2025년 삼성전자 반도체 실적 전망 근거는?"
+            autocomplete="off"
+          ></textarea>
+          <div class="composer-actions">
+            <button type="button" class="btn-ghost" id="advanced-toggle" aria-expanded="false">직접 입력으로 조사</button>
+            <button type="submit" class="btn-primary" id="send-btn">보내기</button>
+          </div>
+        </div>
+        <p class="composer-hint" id="composer-hint">
+          Enter 로 전송 · Shift+Enter 로 줄바꿈
+        </p>
+      </form>
+
+      <!-- 고급 옵션(선택) -->
+      <div class="advanced" id="advanced" hidden>
+        <div class="advanced-grid">
+          <label class="field">
+            <span class="field-label">조사 질문</span>
+            <input type="text" id="adv-question" placeholder="예) 삼성전자 2025년 실적 전망" />
+          </label>
+          <label class="field">
+            <span class="field-label">기업명</span>
+            <input type="text" id="adv-company" placeholder="예) 삼성전자 (비워도 자동 인식)" />
+          </label>
+          <label class="field">
+            <span class="field-label">조사 주제</span>
+            <input type="text" id="adv-topic" placeholder="예) 반도체 업황" />
+          </label>
+          <label class="field">
+            <span class="field-label">기간</span>
+            <input type="text" id="adv-period" placeholder="예) 2025 / 2025-06 / 2025Q2" />
+          </label>
+          <label class="field">
+            <span class="field-label">투자 잔고 <em class="muted">(선택)</em></span>
+            <input type="text" id="adv-balance" placeholder="예) 1,000만원" />
+          </label>
+          <label class="field field-wide">
+            <span class="field-label">
+              기업 공식 IR URL <em class="muted">(선택)</em>
+            </span>
+            <input type="text" id="adv-ir" placeholder="https://example.com/ir/annual-report" />
+            <span class="field-hint">비워도 됩니다. Agent 가 금융감독원 공시 원문과 공식 IR 문서를 직접 찾아옵니다.</span>
+          </label>
+        </div>
+        <button type="button" class="btn-primary" id="advanced-run">이 설정으로 조사 실행</button>
+      </div>
+    </section>
+
+    <!-- ---------- 우측 정보 열 ---------- -->
+    <aside class="rail">
+      <section class="card" id="sources">
+        <h2 class="card-title">연결 상태</h2>
+        <p class="card-note">키 값은 서버에서만 사용합니다. 이 화면에는 설정 여부만 표시됩니다.</p>
+        <ul class="rail-list" id="connector-list"></ul>
+      </section>
+
+      <section class="card" id="method">
+        <h2 class="card-title">분석 방법론</h2>
+        <div class="method" id="method-body">
+          <ol class="method-steps">
+            <li><strong>Planner</strong> — 질문을 하위 항목으로 나누고 필요한 데이터 소스를 선택</li>
+            <li><strong>Retriever</strong> — OpenDART · ECOS · KOSIS · 기업 IR 원문 수집</li>
+            <li><strong>Parser</strong> — 제목·발행일·기준기간·단위·원문 구절 추출</li>
+            <li><strong>Claim Extractor</strong> — 핵심 주장과 수치 구조화</li>
+            <li><strong>Evidence Checker</strong> — 지지 근거 / 반대 근거 / 상충 / 불확실성 분리</li>
+            <li><strong>Outlook</strong> — 근거 방향 가중치로 상승·하락 확률 산출</li>
+            <li><strong>Report</strong> — 출처 링크 포함 브리핑 생성</li>
+          </ol>
+          <p class="card-note">
+            LLM(NVIDIA NIM)은 문장 정리와 방향 분류에만 사용합니다. 모든 수치와 인용은
+            원문 대조를 통과해야 결과에 포함됩니다.
+          </p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2 class="card-title">최근 브리핑</h2>
+        <ul class="rail-list" id="recent-list">
+          <li class="rail-empty">아직 저장된 브리핑이 없습니다.</li>
+        </ul>
+      </section>
+    </aside>
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <p>
+      본 서비스는 공개 자료를 수집·검증해 <strong>조사 초안</strong>을 만드는 보조 도구입니다.
+      투자 권유·매매 권유가 아니며, 최종 판단은 사용자 검토가 필요합니다.
+    </p>
+  </div>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
