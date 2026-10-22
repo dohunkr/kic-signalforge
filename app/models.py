@@ -269,6 +269,7 @@ class ResearchRequest(BaseModel):
     topic: str = Field("", max_length=200)
     company: str = Field("", max_length=200)
     period: str = Field("", max_length=100)
+    balance: Optional[float] = Field(None, ge=10_000)
     ir_urls: List[str] = Field(default_factory=list, max_length=10)
     extra_keywords: List[str] = Field(default_factory=list, max_length=20)
     allow_sample_data: bool = True

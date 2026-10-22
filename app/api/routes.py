@@ -93,6 +93,7 @@ def research(request: ResearchRequest) -> Dict[str, Any]:
             topic=request.topic,
             period=request.period,
             ir_urls=request.ir_urls,
+            balance=request.balance,
         )
     except Exception as exc:  # noqa: BLE001 - 서버가 죽지 않도록 명시적 오류 반환
         log.exception("리서치 실행 실패")

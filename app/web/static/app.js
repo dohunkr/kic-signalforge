@@ -37,6 +37,7 @@
   const state = {
     sessionId: null,
     step: "welcome",
+    question: "",
     busy: false,
     theme: "light",
   };
@@ -176,44 +177,32 @@
     const message = (text || "").trim();
     if (!message) return;
 
-    state.busy = true;
-    el.composerInput.value = "";
-    autoGrow();
-    addMessage("user", esc(message));
-
-    const thinking = addMessage(
-      "assistant",
-      '<span class="spinner"></span> <span class="muted">공개 자료를 확인하고 있습니다…</span>'
-    );
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: state.sessionId, message: message }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "요청 실패");
-      state.sessionId = data.session_id;
-      try { localStorage.setItem("sf-session", state.sessionId); } catch (err) { /* 저장 실패는 무시 */ }
-      state.step = data.step;
-      thinking.remove();
-
-      addMessage("assistant", renderReply(data.reply));
-      renderQuickReplies(data.quick_replies || []);
-
-      if (data.state && data.state.result) {
-        renderResult(data.state.result);
-        loadRecent();
-      }
-      updateComposerPrompt(data.step);
-    } catch (err) {
-      thinking.remove();
-      addMessage("assistant", "조사 중 오류가 발생했습니다: " + esc(err.message || "알 수 없는 오류"));
-    } finally {
-      state.busy = false;
-      setBusy(false);
+    // 질문을 받을 때 서버에서 기업 목록(DART ZIP)을 내려받지 않는다.
+    // Vercel은 요청마다 다른 인스턴스로 연결될 수 있으므로 질문/잔고 단계는
+    // 브라우저에서 관리하고, 두 입력이 모인 뒤 상태 없는 조사 API를 호출한다.
+    if (state.step !== "balance") {
+      state.question = message;
+      state.step = "balance";
+      el.composerInput.value = "";
+      autoGrow();
+      addMessage("user", esc(message));
+      addMessage(
+        "assistant",
+        "좋습니다. 시뮬레이션에 사용할 <strong>투자 잔고</strong>는 얼마로 할까요?<br />예) 1,000만원"
+      );
+      renderQuickReplies(["1,000만원", "5,000만원", "1억원"]);
+      updateComposerPrompt(state.step);
+      return;
     }
+
+    const balance = parseBalance(message);
+    if (!balance || balance < 10000) {
+      addMessage("user", esc(message));
+      addMessage("assistant", "잔고를 숫자로 입력해 주세요. 예) 1,000만원 (최소 10,000원)");
+      updateComposerPrompt("balance");
+      return;
+    }
+    runDirect({ question: state.question, balance: message });
   }
 
   function renderReply(text) {
@@ -797,50 +786,66 @@
   async function runDirect(payload) {
     if (state.busy) return;
     state.busy = true;
+    state.question = payload.question || state.question;
+    state.step = "running";
     setBusy(true);
+    el.composerInput.value = "";
+    autoGrow();
     addMessage(
       "user",
-      "<strong>직접 입력</strong><br />" + esc(payload.question) +
+      (payload.balance ? "<strong>투자 잔고</strong><br />" : "<strong>직접 입력</strong><br />") + esc(payload.balance || payload.question) +
         (payload.company ? "<br />기업: " + esc(payload.company) : "") +
         (payload.period ? "<br />기간: " + esc(payload.period) : "") +
-        (payload.balance ? "<br />잔고: " + esc(payload.balance) : "")
+        (payload.balance && payload.question ? "<br />질문: " + esc(payload.question) : "")
     );
     const thinking = addMessage(
       "assistant",
       '<span class="spinner"></span> <span class="muted">공개 자료를 확인하고 있습니다…</span>'
     );
     try {
+      const balance = parseBalance(payload.balance);
       const body = {
         question: payload.question,
         company: payload.company,
         topic: payload.topic,
         period: payload.period,
+        balance: balance,
       };
       const ir = (payload.ir_urls || "").trim();
       if (ir) body.ir_urls = [ir];
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
       const res = await fetch("/api/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "요청 실패");
       thinking.remove();
 
-      const balance = parseBalance(payload.balance);
-      if (balance) {
+      if (balance && !data.simulation) {
         const sim = await fetchSimulation(data, balance);
         if (sim) data.simulation = sim;
       }
       window.__SIM__ = data.simulation || null;
+      state.step = "done";
+      addMessage("assistant", "조사가 완료됐습니다. 아래에서 상승·하락 확률과 시뮬레이션을 확인해 주세요.");
       renderResult(data);
       loadRecent();
     } catch (err) {
       thinking.remove();
-      addMessage("assistant", "조사 중 오류가 발생했습니다: " + esc(err.message || "알 수 없는 오류"));
+      state.step = payload.balance ? "balance" : "welcome";
+      const message = err.name === "AbortError"
+        ? "조사가 2분 안에 끝나지 않아 요청을 멈췄습니다. 다시 시도해 주세요."
+        : "조사 중 오류가 발생했습니다: " + (err.message || "알 수 없는 오류");
+      addMessage("assistant", esc(message));
     } finally {
       state.busy = false;
       setBusy(false);
+      updateComposerPrompt(state.step);
     }
   }
 
@@ -868,7 +873,7 @@
     const m = String(text).replace(/ /g, "").match(/([\d,]+)(천만|만|억|조)?/);
     if (!m) return null;
     const value = parseFloat(m[1].replace(/,/g, ""));
-    const mult = { "": 1, "만": 10000, "천만": 10000000, "억": 100000000, "조": 100000000000 }[m[2] || ""];
+    const mult = { "": 1, "만": 10000, "천만": 10000000, "억": 100000000, "조": 1000000000000 }[m[2] || ""];
     return value * mult;
   }
 
@@ -942,13 +947,9 @@
       if (dl) downloadReport();
     });
 
-    // 새로 들어오면 서버 세션을 만들고 환영 메시지를 다시 보여준다.
-    const params = new URLSearchParams(location.search);
-    const restored = params.get("session");
-    if (restored) {
-      state.sessionId = restored;
-      restoreSession(restored);
-    } else startNewChat();
+    // 방문할 때마다 새 대화를 환영 화면에서 시작한다. 진행 상태는
+    // 브라우저 인스턴스 메모리에 의존하지 않도록 질문을 받은 뒤 로컬에서 이어간다.
+    startNewChat();
 
     el.newChat.addEventListener("click", startNewChat);
   }
@@ -958,24 +959,14 @@
     el.messages.innerHTML = "";
     state.sessionId = null;
     state.step = "welcome";
+    state.question = "";
     try { localStorage.removeItem("sf-session"); } catch (err) { /* 무시 */ }
-    try {
-      const res = await fetch("/api/chat/reset", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: null, message: "" }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "요청 실패");
-      state.sessionId = data.session_id;
-      state.step = data.step || "welcome";
-      try { localStorage.setItem("sf-session", state.sessionId); } catch (err) { /* 무시 */ }
-      addMessage("assistant", renderReply(data.reply));
-      renderQuickReplies(data.quick_replies || EXAMPLES);
-      updateComposerPrompt(state.step);
-    } catch (err) {
-      addMessage("assistant", "환영합니다. <strong>무엇이 궁금하신가요?</strong>");
-      renderQuickReplies(EXAMPLES);
-    }
+    addMessage(
+      "assistant",
+      "환영합니다. <strong>무엇이 궁금하신가요?</strong><br />관심 있는 기업이나 산업을 입력하면 공개 자료를 찾아 근거와 반대 근거를 함께 정리해 드립니다."
+    );
+    renderQuickReplies(EXAMPLES);
+    updateComposerPrompt(state.step);
   }
 
   async function restoreSession(sessionId) {
