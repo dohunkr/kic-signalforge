@@ -62,7 +62,7 @@ def classify_with_llm(
     claims: Sequence[Claim],
     *,
     llm: Optional[Any] = None,
-    max_tokens: int = 700,
+    max_tokens: int = 1000,
 ) -> Tuple[List[ClaimOutlook], List[str]]:
     """LLM 으로 주장별 방향을 판정한다. 실패 시 빈 목록을 돌려준다."""
     notes: List[str] = []
@@ -72,6 +72,17 @@ def classify_with_llm(
     usable = [c for c in claims if c.quotes and any(q.verified for q in c.quotes)]
     if not usable:
         return [], notes
+    # 긴 공시에서 나온 모든 후보를 한 번에 보내면 응답 JSON 이 잘리거나
+    # Vercel의 짧은 추론 제한에 걸린다. 강한 원문 근거가 있는 최대 8건만 판정한다.
+    usable.sort(
+        key=lambda c: (
+            bool(c.metrics),
+            c.status is ClaimStatus.SUPPORTED,
+            sum(1 for q in c.quotes if q.verified),
+        ),
+        reverse=True,
+    )
+    usable = usable[:8]
 
     system = (
         "당신은 금융 리서치 보조 에이전트입니다. 주어진 주장마다 방향만 분류하십시오. "
@@ -113,7 +124,11 @@ def classify_with_llm(
     try:
         raw = llm.chat_json(system, user, max_tokens=max_tokens, schema=schema)
     except Exception as exc:  # noqa: BLE001
-        notes.append(f"LLM 방향 판정 실패: {type(exc).__name__}")
+        code = getattr(exc, "code", None)
+        notes.append(
+            f"LLM 방향 판정 실패: {type(exc).__name__}"
+            + (f" ({code})" if code else "")
+        )
         return [], notes
 
     items = raw.get("outlooks") if isinstance(raw, dict) else None
