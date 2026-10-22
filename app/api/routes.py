@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..chat.session import ChatService
 from ..config import get_settings
+from ..llm.nim import NimProvider
 from ..models import Briefing, ChatRequest, ResearchRequest
 from ..observability import get_logger
 from ..pipeline.orchestrator import Orchestrator
@@ -106,6 +108,40 @@ def research(request: ResearchRequest) -> Dict[str, Any]:
         payload["simulation"] = simulation.model_dump(mode="json")
     payload["elapsed_seconds"] = round(time.monotonic() - started, 2)
     return payload
+
+
+class RedTeamRequest(BaseModel):
+    question: str
+    outlook: Dict[str, Any] = Field(default_factory=dict)
+    claims: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+@router.post("/api/red-team")
+def red_team(request: RedTeamRequest) -> Dict[str, Any]:
+    """검증된 분석 자료 안에서 반대 논거를 별도 호출로 점검한다."""
+    provider = NimProvider(get_settings().nim, max_retries=get_settings().max_retries)
+    if not provider.available:
+        return {"available": False, "note": "AI 설정이 없어 원문에 기록된 반대 근거만 확인할 수 있습니다."}
+    claims = request.claims[:20]
+    sources = request.sources[:30]
+    allowed = {str(s.get("source_id")) for s in sources}
+    system = (
+        "당신은 투자 전망의 반대편을 심사하는 독립 검토자입니다. 주어진 검증된 주장과 출처만 사용하고 "
+        "낙관 전망을 가장 강하게 반박하세요. 자료에 없는 사실은 만들지 말고 부족하면 명시하세요. "
+        "결론이 기준 전망과 다르면 이를 좌우한 출처 ID를 지정하세요. JSON 객체만 반환하세요."
+    )
+    user = json.dumps({"question": request.question, "baseline": request.outlook,
+                       "claims": claims, "sources": sources}, ensure_ascii=False)
+    try:
+        result = provider.chat_json(system, user, max_tokens=900)
+        cited = [str(x) for x in result.get("source_ids", []) if str(x) in allowed]
+        return {"available": True, "review": str(result.get("review") or result.get("summary") or "반대 심사 결과를 만들지 못했습니다.")[:1200],
+                "changed_conclusion": bool(result.get("changed_conclusion", False)),
+                "source_ids": cited, "model": provider.model}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("반대 심사 실패: %s", type(exc).__name__)
+        return {"available": False, "note": "반대 심사 AI 호출에 실패했습니다. 기존 반대 근거를 아래에서 확인해 주세요."}
 
 
 @router.post("/api/chat")

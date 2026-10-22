@@ -530,3 +530,29 @@ a:hover { text-decoration: underline; }
 .kv dt { color: var(--text-secondary); margin: 0; }
 .kv dd { margin: 0; font-weight: 500; }
 .kv-list { margin: 0; }
+
+/* ============================ REVIEW TOOLS ============================ */
+.audit-row { border-top: 1px solid var(--border); padding: var(--sp-4) 0; }
+.audit-totals { display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: var(--sp-3) 0; color: var(--text-secondary); font-size: var(--fs-small); }
+.audit-totals span { padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-control); }
+.audit-totals strong { color: var(--text-primary); margin-left: var(--sp-1); }
+.audit-row > div { display: grid; gap: var(--sp-2); }
+.audit-row strong { font-size: var(--fs-body); line-height: 1.5; }
+.audit-row p, .redteam-output p, .change-card p { color: var(--text-secondary); margin: 0; line-height: 1.6; }
+.audit-links, .redteam-output { display: flex; flex-direction: column; gap: var(--sp-2); }
+.audit-links a, .redteam-output a { color: var(--primary); font-size: var(--fs-small); }
+.redteam-output { margin-top: var(--sp-4); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface-sunken); }
+.redteam-output strong { color: var(--text-primary); }
+.watch-status { color: var(--text-secondary); font-size: var(--fs-small); }
+.assumption-panel { margin-top: var(--sp-5); padding: var(--sp-4); border: 1px solid var(--border); border-radius: var(--r-card); }
+.assumption-row { display: grid; grid-template-columns: minmax(130px, 1fr) 2fr 64px; align-items: center; gap: var(--sp-3); padding: var(--sp-2) 0; font-size: var(--fs-small); }
+.assumption-row input { accent-color: var(--primary); width: 100%; }
+.assumption-row output { text-align: right; font-variant-numeric: tabular-nums; }
+.presentation-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: var(--sp-5); background: rgba(10, 10, 10, .72); }
+.presentation-card { position: relative; width: min(900px, 100%); min-height: min(620px, 90vh); padding: clamp(24px, 6vw, 64px); display: flex; flex-direction: column; justify-content: space-between; background: var(--surface); color: var(--text-primary); border: 1px solid var(--border); border-radius: 12px; }
+.presentation-close { position: absolute; top: 16px; right: 20px; border: 0; background: transparent; color: var(--text-secondary); font-size: 32px; cursor: pointer; }
+.presentation-pages h2 { font: 700 clamp(32px, 6vw, 60px)/1.1 var(--font-display); letter-spacing: -.035em; margin: var(--sp-5) 0; }
+.presentation-copy { font-size: clamp(18px, 2.5vw, 26px); line-height: 1.65; white-space: pre-wrap; color: var(--text-secondary); }
+.presentation-controls { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
+.change-card li { margin: var(--sp-2) 0; color: var(--text-secondary); }
+@media (max-width: 620px) { .assumption-row { grid-template-columns: 1fr 56px; } .assumption-row input { grid-column: 1 / -1; grid-row: 2; } }

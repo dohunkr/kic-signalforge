@@ -249,8 +249,12 @@
     window.__SIM__ = simulation;
 
     let html = '<div class="result">' + renderResultActions();
+    if (briefing.changeSummary) html += renderChangeCard(briefing.changeSummary);
     html += renderOutlookCard(outlook, briefing);
     if (simulation) html += renderSimulationCard(simulation);
+    html += renderAuditCard(briefing);
+    html += renderRedTeamCard(briefing);
+    html += renderWatchCard(briefing);
     html += renderClaimsCard(briefing);
     html += renderReliabilityCard(briefing);
     html += renderSourcesCard(briefing);
@@ -260,6 +264,7 @@
     html += "</div>";
     addResultBlock(html);
     bindChart();
+    bindResultFeatures(briefing, simulation);
   }
 
   function renderResultActions() {
@@ -267,8 +272,109 @@
       '<div class="result-actions">' +
       '<p class="card-note">새 자료를 기준으로 결과를 갱신하거나, 이어서 질문할 수 있어요.</p>' +
       '<button type="button" class="btn-secondary btn-sm" id="rerun-analysis">최신 자료로 다시 분석</button>' +
+      '<button type="button" class="btn-secondary btn-sm" id="presentation-mode">60초 심사 모드</button>' +
       '</div>'
     );
+  }
+
+  function renderAuditCard(briefing) {
+    const claims = briefing.claims || [];
+    const outlooks = briefing.claim_outlooks || [];
+    const sources = briefing.sources || [];
+    const weight = { 1: 1, 2: 1.8, 3: 2.6 };
+    const totals = { up: 0, down: 0, neutral: 0 };
+    outlooks.forEach((o) => { const c = claims.find((x) => x.claim_id === o.claim_id); if (c && ((c.supporting_source_ids || []).length || (c.contradicting_source_ids || []).length)) totals[o.direction] = (totals[o.direction] || 0) + (weight[o.strength] || 1); });
+    const rows = outlooks.map((o) => {
+      const c = claims.find((x) => x.claim_id === o.claim_id);
+      if (!c) return "";
+      const w = weight[o.strength] || 1;
+      const ids = [...new Set([...(c.supporting_source_ids || []), ...(c.contradicting_source_ids || [])])];
+      const links = sources.filter((s) => ids.includes(s.source_id));
+      return '<article class="audit-row"><div><span class="chip">' + esc(o.direction || "neutral") + ' · 강도 ' + esc(o.strength || 1) + ' · 가중치 ' + w + '</span><strong>' + esc(c.text) + '</strong><p>' + esc(o.rationale || "판정 근거 설명 없음") + '</p>' +
+        (links.length ? '<div class="audit-links">' + links.slice(0, 3).map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.title) + ' ↗</a>').join("") + '</div>' : '<small>연결된 출처 없음 — 확률 반영에서 제외될 수 있음</small>') + '</div></article>';
+    }).filter(Boolean).join("");
+    return '<section class="card audit-card"><p class="overline">REPRODUCIBLE ANALYSIS</p><h3 class="card-title">전망을 계산한 근거</h3><p class="card-note">방향 판정에 사용한 주장과 강도별 가중치(1점·1.8점·2.6점), 원문 출처를 연결했습니다. 자료 커버리지와 불확실성은 확률을 50% 쪽으로 조정합니다.</p><div class="audit-totals"><span>상승 가중치 <strong>' + totals.up.toFixed(1) + '</strong></span><span>하락 가중치 <strong>' + totals.down.toFixed(1) + '</strong></span><span>중립 가중치 <strong>' + totals.neutral.toFixed(1) + '</strong></span><span>커버리지 <strong>' + esc(((briefing.outlook || {}).notes || []).find((n) => String(n).includes("커버리지")) || "미산출") + '</strong></span></div>' +
+      (rows || '<p class="card-note">판정된 주장이 없습니다. 이 경우 확률을 신뢰도 있게 재현하기 어렵습니다.</p>') + '</section>';
+  }
+
+  function renderChangeCard(change) {
+    return '<section class="card change-card"><p class="overline">UPDATE DIFF</p><h3 class="card-title">이전 분석과 달라진 점</h3><p>새로 연결된 자료 <strong>' + Number(change.added || 0) + '건</strong> · 상승 확률 변화 <strong>' + (Number(change.probabilityDelta) > 0 ? "+" : "") + Number(change.probabilityDelta || 0) + '%p</strong></p>' + ((change.titles || []).length ? '<ul>' + change.titles.map((x) => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '<p class="card-note">새로 연결된 출처가 없습니다.</p>') + '</section>';
+  }
+
+  function renderRedTeamCard(briefing) {
+    return '<section class="card redteam-card"><p class="overline">ADVERSARIAL REVIEW</p><h3 class="card-title">반대편 AI 심사</h3><p class="card-note">현재 전망을 반박할 가장 강한 근거를 같은 AI 모델에 별도 요청합니다. 다른 모델을 연결하지 않은 경우 독립 모델 비교는 아닙니다.</p><button class="btn-secondary btn-sm" id="run-red-team" type="button">반대 심사 실행</button><div id="red-team-output" aria-live="polite"></div></section>';
+  }
+
+  function renderWatchCard(briefing) {
+    const active = localStorage.getItem("sf-watch-run") === String(briefing.run_id);
+    return '<section class="card watch-card"><p class="overline">SOURCE WATCH</p><h3 class="card-title">자료 변화 알림</h3><p class="card-note">브라우저가 열려 있는 동안 24시간 뒤 최신 자료 확인 알림을 띄웁니다. 알림에서 다시 분석하면 새로 연결된 출처와 이전 결과를 비교할 수 있습니다.</p><button class="btn-secondary btn-sm" id="toggle-watch" type="button">' + (active ? '알림 끄기' : '24시간 자료 확인 알림 켜기') + '</button><span id="watch-status" class="watch-status">' + (active ? '이 분석에 대한 확인 알림이 켜져 있습니다.' : '') + '</span></section>';
+  }
+
+  function bindResultFeatures(briefing, simulation) {
+    const sliders = Array.from(document.querySelectorAll("[data-assumption]"));
+    if (sliders.length && simulation && simulation.balance) {
+      const baseUp = Number((briefing.outlook || {}).probability_up || 0.5);
+      const baseRet = Number((briefing.outlook || {}).expected_return || 0);
+      const calc = () => {
+        const vals = Object.fromEntries(sliders.map((s) => [s.dataset.assumption, Number(s.value)]));
+        document.querySelectorAll("[data-value]").forEach((o) => { const s = sliders.find((x) => x.dataset.assumption === o.dataset.value); o.value = s.value + (o.dataset.value === "rate" ? "%p" : "%"); o.textContent = o.value; });
+        const delta = -1.5 * vals.rate + 0.25 * vals.fx + 0.2 * vals.chip;
+        const adjustedUp = Math.max(0.05, Math.min(0.95, baseUp + delta * 0.03));
+        const adjustedReturn = baseRet + delta;
+        document.querySelectorAll(".balance-outcome").forEach((card) => {
+          const key = card.dataset.key;
+          const original = Number(card.dataset.return || 0);
+          const rate = key === "base" ? adjustedReturn : original + delta;
+          const amount = Number(simulation.balance) * (1 + rate / 100);
+          const diff = amount - Number(simulation.balance);
+          card.querySelector(".outcome-value").textContent = num(amount) + "원";
+          const deltaEl = card.querySelector(".outcome-delta");
+          deltaEl.textContent = (diff >= 0 ? "+" : "") + num(diff) + "원 (" + signed(rate) + ")";
+          deltaEl.className = "outcome-delta " + (diff >= 0 ? "is-up" : "is-down");
+        });
+        const impact = $("assumption-impact");
+        if (impact) impact.textContent = "단순 민감도 참고: 상승 확률 " + pct(adjustedUp) + " · 기준 경로 " + signed(adjustedReturn) + " (기존 대비 " + signed(delta) + "%p 조정)";
+      };
+      sliders.forEach((s) => s.addEventListener("input", calc));
+    }
+    const redBtn = $("run-red-team");
+    if (redBtn) redBtn.onclick = async () => {
+      const out = $("red-team-output"); redBtn.disabled = true; redBtn.textContent = "반대 근거 심사 중…";
+      out.innerHTML = '<p class="card-note"><span class="spinner"></span> 자료 범위 안에서 반론을 검토하고 있습니다.</p>';
+      try {
+        const res = await fetch("/api/red-team", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question: briefing.question, outlook: briefing.outlook || {}, claims: briefing.claims || [], sources: (briefing.sources || []).map((s) => ({ source_id: s.source_id, title: s.title, url: s.url, published_at: s.published_at, excerpt: s.excerpt, provenance: s.provenance })) }) });
+        const data = await res.json();
+        const sources = (briefing.sources || []).filter((s) => (data.source_ids || []).includes(s.source_id));
+        out.innerHTML = '<div class="redteam-output"><strong>' + (data.changed_conclusion ? '결론에 영향을 준 반론' : '반대편 검토') + '</strong><p>' + esc(data.review || data.note || "결과 없음") + '</p>' + (sources.map((s) => '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.title) + ' ↗</a>').join("") || '<small>응답에 연결된 출처 ID가 없습니다. 아래 주장·출처에서 반대 근거를 확인하세요.</small>') + '</div>';
+      } catch (e) { out.innerHTML = '<p class="card-note">반대 심사 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.</p>'; }
+      redBtn.disabled = false; redBtn.textContent = "반대 심사 다시 실행";
+    };
+  }
+
+  function openPresentation(briefing) {
+    const sim = window.__SIM__ || {};
+    const sources = briefing.sources || [];
+    const claims = briefing.claims || [];
+    const opposing = claims.filter((c) => c.status === "contested" || (c.contradicting_source_ids || []).length).slice(0, 3);
+    const modal = document.createElement("div"); modal.className = "presentation-overlay"; modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true");
+    modal.innerHTML = '<div class="presentation-card"><button class="presentation-close" type="button" aria-label="닫기">×</button><p class="overline">60 SECOND REVIEW</p><div class="presentation-pages"></div><div class="presentation-controls"><button class="btn-secondary" data-prev>이전</button><span></span><button class="btn-primary" data-next>다음</button></div></div>';
+    const pages = [
+      ["질문", briefing.question || "분석 질문"],
+      ["핵심 근거", claims.slice(0, 3).map((c) => c.text).join("\n") || "검증된 핵심 주장이 없습니다."],
+      ["반대 근거", opposing.map((c) => c.text).join("\n") || (briefing.outlook || {}).bear_evidence?.join("\n") || "확인된 반대 근거가 제한적입니다."],
+      ["확률", "상승 " + pct((briefing.outlook || {}).probability_up) + " · 하락 " + pct((briefing.outlook || {}).probability_down) + " · 기대수익률 " + signed((briefing.outlook || {}).expected_return)],
+      ["잔고 시나리오", (sim.scenarios || []).map((s) => s.label + ": " + signed(s.return_pct) + (sim.balance ? " → " + num(sim.balance * (1 + s.return_pct / 100)) + "원" : "")).join("\n") || "시뮬레이션 데이터가 없습니다."],
+      ["한계와 출처", (briefing.uncertainties || []).slice(0, 2).map((u) => u.message).join("\n") + "\n출처 " + sources.length + "건 · 추정치는 투자 권유가 아닙니다."]
+    ];
+    let index = 0; let remaining = 60; let timer;
+    const paint = () => { modal.querySelector(".presentation-pages").innerHTML = '<p class="overline">' + (index + 1) + ' / ' + pages.length + ' · 남은 시간 ' + remaining + '초</p><h2>' + esc(pages[index][0]) + '</h2><p class="presentation-copy">' + esc(pages[index][1]).replace(/\n/g, "<br>") + '</p>'; modal.querySelector("[data-prev]").disabled = index === 0; modal.querySelector("[data-next]").textContent = index === pages.length - 1 ? "닫기" : "다음"; };
+    const close = () => { clearInterval(timer); modal.remove(); };
+    modal.querySelector(".presentation-close").onclick = close;
+    modal.querySelector("[data-prev]").onclick = () => { index = Math.max(0, index - 1); paint(); };
+    modal.querySelector("[data-next]").onclick = () => { if (index === pages.length - 1) close(); else { index++; paint(); } };
+    modal.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); if (e.key === "ArrowRight") modal.querySelector("[data-next]").click(); });
+    document.body.appendChild(modal); paint(); modal.querySelector("[data-next]").focus();
+    timer = setInterval(() => { remaining = Math.max(0, remaining - 1); paint(); if (!remaining) close(); }, 1000);
   }
 
   function renderFollowupsCard() {
@@ -442,8 +548,11 @@
       ? '<h4 class="scenario-heading">잔고 기준 12개월 결과 비교</h4><div class="balance-outcomes">' + scenarios.map((s) => {
           const estimated = Number(sim.balance) * (1 + Number(s.return_pct || 0) / 100);
           const delta = estimated - Number(sim.balance);
-          return '<article class="balance-outcome"><span class="chip" style="--scenario-color:' + esc(s.color || "var(--primary)") + '">' + esc(s.label) + (s.key === "base" ? "" : " · " + pct(s.probability)) + '</span><strong>' + num(estimated) + '원</strong><small class="' + (delta >= 0 ? "is-up" : "is-down") + '">' + (delta >= 0 ? "+" : "") + num(delta) + '원 (' + signed(s.return_pct) + ')</small><span class="scenario-description">' + esc(s.description || "") + '</span></article>';
+          return '<article class="balance-outcome" data-key="' + esc(s.key) + '" data-return="' + Number(s.return_pct || 0) + '"><span class="chip" style="--scenario-color:' + esc(s.color || "var(--primary)") + '">' + esc(s.label) + (s.key === "base" ? "" : " · " + pct(s.probability)) + '</span><strong class="outcome-value">' + num(estimated) + '원</strong><small class="outcome-delta ' + (delta >= 0 ? "is-up" : "is-down") + '">' + (delta >= 0 ? "+" : "") + num(delta) + '원 (' + signed(s.return_pct) + ')</small><span class="scenario-description">' + esc(s.description || "") + '</span></article>';
         }).join("") + "</div>" : "";
+    const assumptionPanel = balanceOutcomes ? '<section class="assumption-panel"><h4 class="scenario-heading">가정 바꾸기 시뮬레이터</h4><p class="card-note">산업 민감도를 단순화한 교육용 참고치입니다. 실제 예측 모델이나 인과 추정이 아닙니다.</p>' + [
+      ["금리 변화", "rate", -1, 1, 0.1, "%p"], ["원/달러 환율 변화", "fx", -10, 10, 1, "%"], ["반도체 가격 변화", "chip", -20, 20, 1, "%"]
+    ].map((x) => '<label class="assumption-row"><span>' + x[0] + '</span><input type="range" min="' + x[2] + '" max="' + x[3] + '" step="' + x[4] + '" value="0" data-assumption="' + x[1] + '"><output data-value="' + x[1] + '">0' + x[5] + '</output></label>').join("") + '<p class="card-note" id="assumption-impact">가정을 조절하면 잔고별 민감도 참고치가 바뀝니다.</p></section>' : "";
 
     return (
       '<section class="card" id="sim-card">' +
@@ -466,6 +575,7 @@
       balanceRow +
       "</dl>" +
       balanceOutcomes +
+      assumptionPanel +
       '<dl class="kv-list">' +
       '<div class="kv"><dt>데이터 출처</dt><dd>' +
       esc(sim.data_source || "—") +
@@ -909,6 +1019,7 @@
       '<span class="spinner"></span> <span class="muted">공개 자료를 확인하고 있습니다…</span>'
     );
     try {
+      const previousBriefing = payload.rerun ? window.__BRIEFING__ : null;
       const balance = parseBalance(payload.balance);
       const body = {
         question: payload.question,
@@ -931,6 +1042,14 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "요청 실패");
       thinking.remove();
+
+      if (payload.rerun && previousBriefing) {
+        const oldIds = new Set((previousBriefing.sources || []).map((s) => s.source_id));
+        const added = (data.sources || []).filter((s) => !oldIds.has(s.source_id));
+        const oldUp = Number((previousBriefing.outlook || {}).probability_up || 0);
+        const newUp = Number((data.outlook || {}).probability_up || 0);
+        data.changeSummary = { added: added.length, titles: added.slice(0, 5).map((s) => s.title), probabilityDelta: Math.round((newUp - oldUp) * 100) };
+      }
 
       if (balance && !data.simulation) {
         const sim = await fetchSimulation(data, balance);
@@ -1071,10 +1190,14 @@
       const dl = e.target.closest("#download-btn");
       const rerun = e.target.closest("#rerun-analysis");
       const followup = e.target.closest("[data-followup]");
+      const present = e.target.closest("#presentation-mode");
+      const watch = e.target.closest("#toggle-watch");
       if (copy) copyReport();
       if (dl) downloadReport();
       if (rerun && state.lastRequest && !state.busy) runDirect({ ...state.lastRequest, rerun: true });
       if (followup) sendFollowup(followup.getAttribute("data-followup"));
+      if (present && window.__BRIEFING__) openPresentation(window.__BRIEFING__);
+      if (watch && window.__BRIEFING__) toggleWatch(window.__BRIEFING__, watch);
     });
 
     // 방문할 때마다 새 대화를 환영 화면에서 시작한다. 진행 상태는
@@ -1082,6 +1205,41 @@
     startNewChat();
 
     el.newChat.addEventListener("click", startNewChat);
+    setInterval(checkWatchReminder, 60000);
+  }
+
+  async function toggleWatch(briefing, button) {
+    const key = "sf-watch-run";
+    if (localStorage.getItem(key) === String(briefing.run_id)) {
+      localStorage.removeItem(key); localStorage.removeItem("sf-watch-at");
+      button.textContent = "24시간 자료 확인 알림 켜기";
+      const status = $("watch-status"); if (status) status.textContent = "알림이 꺼졌습니다.";
+      return;
+    }
+    if ("Notification" in window && Notification.permission === "default") {
+      try { await Notification.requestPermission(); } catch (e) { /* 알림 권한은 선택 사항 */ }
+    }
+    localStorage.setItem(key, String(briefing.run_id));
+    localStorage.setItem("sf-watch-at", String(Date.now() + 24 * 60 * 60 * 1000));
+    localStorage.setItem("sf-watch-request", JSON.stringify(state.lastRequest || { question: briefing.question }));
+    button.textContent = "알림 끄기";
+    const status = $("watch-status"); if (status) status.textContent = "24시간 뒤 최신 자료를 확인하라는 알림을 표시합니다. 브라우저를 열어 두어야 합니다.";
+  }
+
+  function checkWatchReminder() {
+    const due = Number(localStorage.getItem("sf-watch-at") || 0);
+    if (!due || Date.now() < due) return;
+    localStorage.setItem("sf-watch-at", String(Date.now() + 24 * 60 * 60 * 1000));
+    const request = JSON.parse(localStorage.getItem("sf-watch-request") || "{}");
+    if ("Notification" in window && Notification.permission === "granted") {
+      const note = new Notification("SignalForge 자료 확인", { body: "저장한 분석의 최신 자료를 다시 확인할 수 있습니다." });
+      note.onclick = () => { window.focus(); if (request.question) runDirect({ ...request, rerun: true }); };
+    }
+    const status = $("watch-status");
+    if (status) {
+      status.textContent = "확인 시점입니다. 최신 자료 확인을 눌러 이전 결과와 비교하세요.";
+      const link = document.createElement("button"); link.className = "btn-secondary btn-sm"; link.textContent = "최신 자료 확인"; link.onclick = () => runDirect({ ...request, rerun: true }); status.appendChild(link);
+    }
   }
 
   async function startNewChat() {
