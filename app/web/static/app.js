@@ -1018,6 +1018,8 @@
       "assistant",
       '<span class="spinner"></span> <span class="muted">공개 자료를 확인하고 있습니다…</span>'
     );
+    let timeoutId;
+    let progressId;
     try {
       const previousBriefing = payload.rerun ? window.__BRIEFING__ : null;
       const balance = parseBalance(payload.balance);
@@ -1031,7 +1033,13 @@
       const ir = (payload.ir_urls || "").trim();
       if (ir) body.ir_urls = [ir];
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
+      timeoutId = setTimeout(() => controller.abort(), 270000);
+      const requestStarted = Date.now();
+      progressId = setInterval(() => {
+        const bubble = thinking.querySelector(".bubble");
+        const seconds = Math.floor((Date.now() - requestStarted) / 1000);
+        if (bubble && seconds >= 60) bubble.innerHTML = '<span class="spinner"></span> <span class="muted">조사가 진행 중입니다. ' + Math.floor(seconds / 60) + '분째 공개 자료와 AI 분석을 기다리고 있습니다…</span>';
+      }, 5000);
       const res = await fetch("/api/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1039,6 +1047,7 @@
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      clearInterval(progressId);
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "요청 실패");
       thinking.remove();
@@ -1074,13 +1083,17 @@
       renderResult(data);
       loadRecent();
     } catch (err) {
+      clearTimeout(timeoutId);
+      clearInterval(progressId);
       thinking.remove();
       state.step = payload.balance ? "balance" : "welcome";
       const message = err.name === "AbortError"
-        ? "조사가 2분 안에 끝나지 않아 요청을 멈췄습니다. 다시 시도해 주세요."
+        ? "조사가 4분 30초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지되니 다시 시도해 주세요."
         : "조사 중 오류가 발생했습니다: " + (err.message || "알 수 없는 오류");
       addMessage("assistant", esc(message));
     } finally {
+      clearTimeout(timeoutId);
+      clearInterval(progressId);
       state.busy = false;
       setBusy(false);
       updateComposerPrompt(state.step);

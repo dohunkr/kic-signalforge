@@ -218,6 +218,16 @@ def _collect_secrets() -> tuple[str, ...]:
 
 
 def load_settings() -> AppSettings:
+    # Vercel 요청은 함수 실행 시간 안에 응답해야 하므로 느린 AI 재시도를 제한한다.
+    is_vercel = _env("VERCEL") == "1"
+    nim_timeout = _env_float("NVIDIA_TIMEOUT_SECONDS", 20.0 if is_vercel else 45.0)
+    max_retries = _env_int("KIC_MAX_RETRIES", 0 if is_vercel else 2)
+    max_run_seconds = _env_float("KIC_MAX_RUN_SECONDS", 75.0 if is_vercel else 90.0)
+    if is_vercel:
+        nim_timeout = min(nim_timeout, 25.0)
+        max_retries = 0
+        max_run_seconds = min(max_run_seconds, 90.0)
+
     nim_key = _env("NVIDIA_API_KEY") or None
     dart_key = _env("DART_API_KEY") or None
     ecos_key = _env("ECOS_API_KEY") or None
@@ -233,7 +243,7 @@ def load_settings() -> AppSettings:
             api_key=nim_key,
             base_url=_env("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
             model=_env("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
-            timeout_seconds=_env_float("NVIDIA_TIMEOUT_SECONDS", 45.0),
+            timeout_seconds=nim_timeout,
         ),
         dart=DartSettings(api_key=dart_key),
         ecos=EcosSettings(api_key=ecos_key),
@@ -244,8 +254,8 @@ def load_settings() -> AppSettings:
             enabled=_env("PRICE_ENABLED", "1") not in ("0", "false", "False"),
         ),
         data_dir=data_dir,
-        max_run_seconds=_env_float("KIC_MAX_RUN_SECONDS", 90.0),
-        max_retries=_env_int("KIC_MAX_RETRIES", 2),
+        max_run_seconds=max_run_seconds,
+        max_retries=max_retries,
         stale_after_days=_env_int("KIC_STALE_AFTER_DAYS", 400),
         host=_env("HOST", "127.0.0.1"),
         port=_env_int("PORT", 8000),
