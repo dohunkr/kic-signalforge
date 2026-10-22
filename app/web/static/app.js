@@ -38,6 +38,7 @@
     sessionId: null,
     step: "welcome",
     question: "",
+    lastRequest: null,
     busy: false,
     theme: "light",
   };
@@ -93,8 +94,9 @@
   }
 
   function addResultBlock(html) {
+    document.querySelectorAll(".msg-result").forEach((node) => node.remove());
     const wrap = document.createElement("div");
-    wrap.className = "msg msg-assistant";
+    wrap.className = "msg msg-assistant msg-result";
     wrap.innerHTML = '<div class="msg-avatar">SF</div><div class="msg-body">' + html + "</div>";
     el.messages.appendChild(wrap);
     scrollToBottom();
@@ -202,7 +204,7 @@
       updateComposerPrompt("balance");
       return;
     }
-    runDirect({ question: state.question, balance: message });
+    runDirect({ question: state.question, balance: message, conversational: true });
   }
 
   function renderReply(text) {
@@ -243,18 +245,88 @@
     const briefing = result.briefing || {};
     const simulation = result.simulation || null;
     const outlook = briefing.outlook || null;
+    window.__BRIEFING__ = briefing;
     window.__SIM__ = simulation;
 
-    let html = '<div class="result">';
+    let html = '<div class="result">' + renderResultActions();
     html += renderOutlookCard(outlook, briefing);
     if (simulation) html += renderSimulationCard(simulation);
     html += renderClaimsCard(briefing);
+    html += renderReliabilityCard(briefing);
     html += renderSourcesCard(briefing);
     html += renderWarningsCard(briefing);
     html += renderReportCard(briefing);
+    html += renderFollowupsCard();
     html += "</div>";
     addResultBlock(html);
     bindChart();
+  }
+
+  function renderResultActions() {
+    return (
+      '<div class="result-actions">' +
+      '<p class="card-note">새 자료를 기준으로 결과를 갱신하거나, 이어서 질문할 수 있어요.</p>' +
+      '<button type="button" class="btn-secondary btn-sm" id="rerun-analysis">최신 자료로 다시 분석</button>' +
+      '</div>'
+    );
+  }
+
+  function renderFollowupsCard() {
+    const prompts = [
+      "반대 근거를 더 찾아서 정리해줘",
+      "최근 공시를 중심으로 다시 살펴봐줘",
+      "자료의 최신성과 출처를 더 자세히 확인해줘",
+    ];
+    return (
+      '<section class="card followups-card"><p class="overline">NEXT QUESTIONS</p>' +
+      '<h3 class="card-title">이어서 살펴보기</h3>' +
+      '<div class="followup-actions">' +
+      prompts.map((prompt) => '<button type="button" class="chip-btn" data-followup="' + esc(prompt) + '">' + esc(prompt) + '</button>').join("") +
+      '</div></section>'
+    );
+  }
+
+  function renderReliabilityCard(briefing) {
+    const sources = briefing.sources || [];
+    const officialProviders = new Set(["dart", "ecos", "kosis", "ir"]);
+    const official = sources.filter((source) => source.provenance === "live" && officialProviders.has(source.provider)).length;
+    const sample = sources.filter((source) => source.provenance === "sample" || source.provenance === "demo").length;
+    const now = Date.now();
+    let fresh = 0;
+    let old = 0;
+    let unknown = 0;
+    sources.forEach((source) => {
+      if (!source.published_at) {
+        unknown++;
+        return;
+      }
+      const published = Date.parse(source.published_at);
+      if (!Number.isFinite(published)) unknown++;
+      else if (now - published <= 365 * 24 * 60 * 60 * 1000) fresh++;
+      else old++;
+    });
+    const conflicts = (briefing.uncertainties || []).filter((item) => item.kind === "conflict").length;
+    const conflictMessages = (briefing.uncertainties || [])
+      .filter((item) => item.kind === "conflict")
+      .slice(0, 2)
+      .map((item) => '<li>' + esc(item.message) + '</li>')
+      .join("");
+    return (
+      '<section class="card reliability-card"><p class="overline">SOURCE CHECK</p>' +
+      '<h3 class="card-title">자료 신뢰도 한눈에 보기</h3>' +
+      '<p class="card-note">점수로 단정하지 않고, 확인 가능한 기준별로 나눠 표시합니다.</p>' +
+      '<div class="reliability-grid">' +
+      '<div><strong>' + official + '/' + sources.length + '</strong><span>공식 출처</span></div>' +
+      '<div><strong>' + fresh + '</strong><span>1년 이내 자료</span></div>' +
+      '<div><strong>' + old + '</strong><span>1년 지난 자료</span></div>' +
+      '<div><strong>' + unknown + '</strong><span>발행일 미확인</span></div>' +
+      '<div><strong>' + conflicts + '</strong><span>자료 상충</span></div>' +
+      '<div><strong>' + sample + '</strong><span>샘플·데모 자료</span></div>' +
+      '</div>' +
+      (conflictMessages ? '<ul class="reliability-conflicts">' + conflictMessages + '</ul>' : '') +
+      (sources.length ? '<a class="btn-ghost reliability-link" href="#sources-card">출처별 상세 확인 ↓</a>' : '<p class="card-note">수집된 출처가 없어 신뢰도 기준을 계산할 수 없습니다.</p>') +
+      '</section>'
+    );
   }
 
   function renderOutlookCard(outlook, briefing) {
@@ -367,10 +439,10 @@
         ? '<div class="kv"><dt>설정 잔고</dt><dd>' + num(sim.balance) + "원</dd></div>"
         : "";
     const balanceOutcomes = sim.balance !== null && sim.balance !== undefined
-      ? '<div class="balance-outcomes">' + scenarios.map((s) => {
+      ? '<h4 class="scenario-heading">잔고 기준 12개월 결과 비교</h4><div class="balance-outcomes">' + scenarios.map((s) => {
           const estimated = Number(sim.balance) * (1 + Number(s.return_pct || 0) / 100);
           const delta = estimated - Number(sim.balance);
-          return '<article class="balance-outcome"><span class="chip" style="--scenario-color:' + esc(s.color || "var(--primary)") + '">' + esc(s.label) + (s.key === "base" ? "" : " · " + pct(s.probability)) + '</span><strong>' + num(estimated) + '원</strong><small class="' + (delta >= 0 ? "is-up" : "is-down") + '">' + (delta >= 0 ? "+" : "") + num(delta) + '원 (' + signed(s.return_pct) + ')</small></article>';
+          return '<article class="balance-outcome"><span class="chip" style="--scenario-color:' + esc(s.color || "var(--primary)") + '">' + esc(s.label) + (s.key === "base" ? "" : " · " + pct(s.probability)) + '</span><strong>' + num(estimated) + '원</strong><small class="' + (delta >= 0 ? "is-up" : "is-down") + '">' + (delta >= 0 ? "+" : "") + num(delta) + '원 (' + signed(s.return_pct) + ')</small><span class="scenario-description">' + esc(s.description || "") + '</span></article>';
         }).join("") + "</div>" : "";
 
     return (
@@ -403,6 +475,7 @@
       '<svg class="chart" id="sim-chart" viewBox="0 0 900 340" role="img" aria-label="주가 시뮬레이션 차트"></svg>' +
       '<div class="chart-tooltip" id="chart-tooltip"></div>' +
       "</div>" +
+      '<div class="chart-evidence-panel" id="chart-evidence-panel" aria-live="polite"><strong>전망 시점을 눌러 근거 확인</strong><span>점이나 선을 누르면 해당 시점의 AI 전망과 연결된 조사 자료를 보여드립니다.</span></div>' +
       '<div class="chart-legend">' +
       legend +
       '<span class="legend-item"><span class="legend-swatch" style="background:var(--primary)"></span>과거 실제 종가</span>' +
@@ -729,12 +802,38 @@
 
     svg.innerHTML = parts.join("");
 
-    // hover
+    const showPointDetails = (idx) => {
+      const p = points[idx];
+      const panel = $("chart-evidence-panel");
+      if (!p || !panel) return;
+      const briefing = window.__BRIEFING__ || {};
+      const claims = briefing.claims || [];
+      const sources = briefing.sources || [];
+      const evidenceLines = p.evidence || [];
+      const direction = Number(p.cumulative_return) >= 0 ? "상승" : "하락";
+      const currency = (window.__SIM__ && window.__SIM__.currency) || "KRW";
+      const matchedClaims = claims.filter((claim) => evidenceLines.some((line) => {
+        const statement = String(line).split(" — ")[0];
+        return statement.startsWith(String(claim.text || "").slice(0, 60)) || String(claim.text || "").startsWith(statement.slice(0, 60));
+      }));
+      const sourceIds = new Set(matchedClaims.flatMap((claim) => [
+        ...(claim.supporting_source_ids || []), ...(claim.contradicting_source_ids || []),
+      ]));
+      const linkedSources = sources.filter((source) => sourceIds.has(source.source_id));
+      panel.innerHTML = '<div class="chart-evidence-head"><strong>' + esc(p.date) + ' 전망 · ' + num(p.price) + ' ' + esc(currency) + '</strong><span>누적 ' + signed(p.cumulative_return) + ' · ' + direction + ' 확률 ' + pct(p.probability) + '</span></div>' +
+        '<p>' + esc(p.detail || p.outlook || "근거 기반 시나리오") + '</p>' +
+        (evidenceLines.length ? '<ul>' + evidenceLines.map((line) => '<li>' + esc(line) + '</li>').join("") + '</ul>' : '<span>이 시점에 연결할 근거 문장이 없습니다.</span>') +
+        (linkedSources.length ? '<div class="chart-source-links"><strong>연결된 조사 자료</strong>' + linkedSources.slice(0, 6).map((source) => '<a href="' + esc(source.url) + '" target="_blank" rel="noopener noreferrer">' + esc(source.title) + ' · ' + esc(source.published_at || "발행일 미확인") + ' ↗</a>').join("") + '</div>' : '<span class="card-note">연결된 원문 출처는 아래 자료 출처 목록에서 확인해 주세요.</span>');
+      panel.classList.add("is-active");
+    };
+
+    // hover와 클릭을 모두 지원해 모바일에서도 전망 근거를 열 수 있다.
     svg.querySelectorAll(".chart-hit").forEach((node) => {
       node.addEventListener("mouseenter", () => {
         const idx = Number(node.getAttribute("data-index"));
         const p = points[idx];
         if (!p) return;
+        showPointDetails(idx);
         tooltip.innerHTML =
           '<p class="tt-title">' +
           esc(p.date) +
@@ -762,6 +861,7 @@
         tooltip.classList.add("is-visible");
       });
       node.addEventListener("mouseleave", () => tooltip.classList.remove("is-visible"));
+      node.addEventListener("click", () => showPointDetails(Number(node.getAttribute("data-index"))));
     });
   }
 
@@ -793,10 +893,16 @@
     autoGrow();
     addMessage(
       "user",
-      (payload.balance ? "<strong>투자 잔고</strong><br />" : "<strong>직접 입력</strong><br />") + esc(payload.balance || payload.question) +
+      (payload.rerun
+        ? "<strong>최신 자료로 다시 분석</strong><br />" + esc(payload.question)
+        : payload.followup
+        ? "<strong>이어서 질문</strong><br />" + esc(payload.followup)
+        : payload.conversational
+        ? "<strong>투자 잔고</strong><br />" + esc(payload.balance)
+        : "<strong>직접 입력</strong><br />" + esc(payload.question)) +
         (payload.company ? "<br />기업: " + esc(payload.company) : "") +
         (payload.period ? "<br />기간: " + esc(payload.period) : "") +
-        (payload.balance && payload.question ? "<br />질문: " + esc(payload.question) : "")
+        (payload.conversational ? "<br />질문: " + esc(payload.question) : "")
     );
     const thinking = addMessage(
       "assistant",
@@ -832,7 +938,20 @@
       }
       window.__SIM__ = data.simulation || null;
       state.step = "done";
-      addMessage("assistant", "조사가 완료됐습니다. 아래에서 상승·하락 확률과 시뮬레이션을 확인해 주세요.");
+      state.lastRequest = {
+        question: payload.question,
+        originalQuestion: payload.originalQuestion || payload.question,
+        company: payload.company || "",
+        topic: payload.topic || "",
+        period: payload.period || "",
+        balance: payload.balance || (balance ? num(balance) + "원" : ""),
+        ir_urls: payload.ir_urls || "",
+      };
+      addMessage("assistant", payload.followup
+        ? "추가 조사를 마쳤습니다. 갱신된 결과를 아래에서 확인해 주세요."
+        : payload.rerun
+        ? "최신 자료로 다시 분석했습니다. 이전 결과와 비교해 보세요."
+        : "조사가 완료됐습니다. 아래에서 상승·하락 확률과 시뮬레이션을 확인해 주세요.");
       renderResult(data);
       loadRecent();
     } catch (err) {
@@ -875,6 +994,13 @@
     const value = parseFloat(m[1].replace(/,/g, ""));
     const mult = { "": 1, "만": 10000, "천만": 10000000, "억": 100000000, "조": 1000000000000 }[m[2] || ""];
     return value * mult;
+  }
+
+  function sendFollowup(prompt) {
+    if (!state.lastRequest || state.busy) return;
+    const request = state.lastRequest;
+    const question = (request.originalQuestion || request.question) + "\n추가 요청: " + prompt;
+    runDirect({ ...request, question, originalQuestion: request.originalQuestion || request.question, followup: prompt });
   }
 
   /* ---------------------------------------------------------------- theme */
@@ -943,8 +1069,12 @@
     document.addEventListener("click", (e) => {
       const copy = e.target.closest("#copy-btn");
       const dl = e.target.closest("#download-btn");
+      const rerun = e.target.closest("#rerun-analysis");
+      const followup = e.target.closest("[data-followup]");
       if (copy) copyReport();
       if (dl) downloadReport();
+      if (rerun && state.lastRequest && !state.busy) runDirect({ ...state.lastRequest, rerun: true });
+      if (followup) sendFollowup(followup.getAttribute("data-followup"));
     });
 
     // 방문할 때마다 새 대화를 환영 화면에서 시작한다. 진행 상태는
@@ -960,6 +1090,7 @@
     state.sessionId = null;
     state.step = "welcome";
     state.question = "";
+    state.lastRequest = null;
     try { localStorage.removeItem("sf-session"); } catch (err) { /* 무시 */ }
     addMessage(
       "assistant",

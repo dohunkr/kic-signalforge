@@ -298,7 +298,7 @@ def build(
                 date=point.date,
                 price=point.close,
                 cumulative_return=cumulative,
-                outlook=f"{direction} · 확률 {prob_up:.0%}",
+                outlook=f"{direction} · 확률 {(prob_up if cumulative >= 0 else prob_down):.0%}",
                 detail=" · ".join(detail_bits),
                 evidence=evidence,
                 probability=prob_up if cumulative >= 0 else prob_down,
