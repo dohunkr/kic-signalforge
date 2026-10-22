@@ -230,8 +230,8 @@ def load_settings() -> AppSettings:
 
     nim_key = _env("NVIDIA_API_KEY") or None
     nim_model = _env("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
-    # Vercel Hobby 에서는 짧고 무료 endpoint 가 있는 경량 모델을 우선한다.
-    if is_vercel and nim_model == "nvidia/nemotron-3-ultra-550b-a55b":
+    # 초대형 기본 모델은 탐색/응답 지연이 길 수 있어 경량 무료 endpoint 를 기본으로 둔다.
+    if nim_model == "nvidia/nemotron-3-ultra-550b-a55b":
         nim_model = "nvidia/nemotron-3.5-lightning-30b-a3b"
     dart_key = _env("DART_API_KEY") or None
     ecos_key = _env("ECOS_API_KEY") or None

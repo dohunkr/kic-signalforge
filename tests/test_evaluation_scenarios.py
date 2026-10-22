@@ -288,7 +288,10 @@ def test_scenario6_no_real_key_material_in_repository():
         "xxxx",
         "<",
     )
-    skip_dirs = {".git", "data", "__pycache__", ".pytest_cache", "tests"}
+    skip_dirs = {
+        ".git", "data", "__pycache__", ".pytest_cache", "tests",
+        "node_modules", ".wrangler", ".venv", "venv",
+    }
     for path in root.rglob("*"):
         if not path.is_file():
             continue

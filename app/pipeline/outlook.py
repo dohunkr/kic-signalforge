@@ -62,7 +62,7 @@ def classify_with_llm(
     claims: Sequence[Claim],
     *,
     llm: Optional[Any] = None,
-    max_tokens: int = 1800,
+    max_tokens: int = 700,
 ) -> Tuple[List[ClaimOutlook], List[str]]:
     """LLM 으로 주장별 방향을 판정한다. 실패 시 빈 목록을 돌려준다."""
     notes: List[str] = []

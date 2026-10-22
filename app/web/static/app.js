@@ -305,7 +305,7 @@
   function renderAiStatusCard(briefing) {
     const usage = briefing.llm || {};
     const used = Boolean(usage.used) || (briefing.claim_outlooks || []).some((item) => item.method === "llm");
-    return '<section class="card ai-status-card ' + (used ? 'is-working' : 'is-fallback') + '"><p class="overline">AI CONNECTION</p><h3 class="card-title">' + (used ? 'AI가 원문을 분석했습니다' : 'AI 응답 없이 규칙 기반으로 분석했습니다') + '</h3><p class="card-note">' + (used ? '원문 인용 검증과 AI 방향 판정을 적용했습니다. NVIDIA NIM ' + esc(usage.model || '모델') + (usage.reason ? ' · ' + esc(usage.reason) : '') : esc(usage.reason || '검증할 원문이 부족하거나 AI 응답이 없어 결정론적 결과를 사용했습니다.')) + '</p>' + (!used ? '<p class="card-note">Vercel 환경변수의 NVIDIA_API_KEY와 선택 모델의 무료 endpoint 사용 가능 여부를 확인해 주세요. AI 미사용 결과는 아래에서 구분해 확인할 수 있습니다.</p>' : '') + '</section>';
+    return '<section class="card ai-status-card ' + (used ? 'is-working' : 'is-fallback') + '"><p class="overline">AI CONNECTION</p><h3 class="card-title">' + (used ? 'AI가 원문을 분석했습니다' : 'AI 응답 없이 규칙 기반으로 분석했습니다') + '</h3><p class="card-note">' + (used ? '원문 인용 검증과 AI 방향 판정을 적용했습니다. NVIDIA NIM ' + esc(usage.model || '모델') + (usage.reason ? ' · ' + esc(usage.reason) : '') : esc(usage.reason || '검증할 원문이 부족하거나 AI 응답이 없어 결정론적 결과를 사용했습니다.')) + '</p>' + (!used ? '<p class="card-note">Vercel 환경변수에서 NVIDIA API 키와 선택 모델의 무료 endpoint 사용 가능 여부를 확인해 주세요. AI 미사용 결과는 아래에서 구분해 확인할 수 있습니다.</p>' : '') + '</section>';
   }
 
   function renderRedTeamCard(briefing) {

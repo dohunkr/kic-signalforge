@@ -280,7 +280,8 @@ class Orchestrator:
 
         candidates: List[Dict[str, Any]] = []
         payload: Dict[str, Any] = {}
-        max_tokens = 3500
+        # 금융 근거 요약은 짧은 구조화 출력이면 충분하다. 긴 생성은 Serverless timeout을 유발한다.
+        max_tokens = 1200 if self.settings.max_retries == 0 else 2000
         for attempt in range(1, 4):
             try:
                 payload = self.llm.chat_json(system, user, max_tokens=max_tokens)
