@@ -166,6 +166,12 @@ class NimProvider(LlmProvider):
         if self._resolved_model:
             return self._resolved_model
 
+        # 설정 모델은 실제 요청에서 검증한다. 요청마다 최대 4개의 ping 을 먼저
+        # 보내면 Vercel cold start 에서 분석보다 모델 탐색이 더 오래 걸릴 수 있다.
+        if self._settings.model and self._settings.model not in self._rejected_models:
+            self._resolved_model = self._settings.model
+            return self._resolved_model
+
         # /models 전체 목록에는 수십~수백 개가 포함될 수 있다. 이를 전부 순차 probe
         # 하면 Vercel 무료 함수 제한에 걸리므로, 설정 모델과 짧은 대체 후보만 확인한다.
         candidates: List[str] = []

@@ -131,7 +131,7 @@ class Orchestrator:
     def _build_connectors(self) -> Dict[ProviderName, Connector]:
         is_vercel = os.environ.get("VERCEL") == "1"
         http = HttpClient(
-            timeout=10.0 if is_vercel else 20.0,
+            timeout=7.0 if is_vercel else 20.0,
             max_retries=self.settings.max_retries,
             observability=self.observability,
         )
@@ -287,7 +287,8 @@ class Orchestrator:
         payload: Dict[str, Any] = {}
         # 금융 근거 요약은 짧은 구조화 출력이면 충분하다. 긴 생성은 Serverless timeout을 유발한다.
         max_tokens = 1200 if self.settings.max_retries == 0 else 2000
-        for attempt in range(1, 4):
+        max_attempts = 1 if self.settings.max_retries == 0 else 3
+        for attempt in range(1, max_attempts + 1):
             try:
                 payload = self.llm.chat_json(system, user, max_tokens=max_tokens)
             except LlmUnavailable as exc:
