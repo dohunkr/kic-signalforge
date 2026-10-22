@@ -5,6 +5,7 @@ UI/채팅 흐름은 이 서비스를 통해서만 동작한다.
 
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -47,7 +48,7 @@ class ResearchService:
         self.settings = settings or get_settings()
         self.orchestrator = orchestrator or Orchestrator(self.settings, store=store)
         self._http = HttpClient(
-            timeout=20.0,
+            timeout=10.0 if os.environ.get("VERCEL") == "1" else 20.0,
             max_retries=self.settings.max_retries,
             observability=self.orchestrator.observability,
         )

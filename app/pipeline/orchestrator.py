@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import time
 import uuid
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -128,14 +129,18 @@ class Orchestrator:
 
     # --- 커넥터 ---------------------------------------------------------
     def _build_connectors(self) -> Dict[ProviderName, Connector]:
+        is_vercel = os.environ.get("VERCEL") == "1"
         http = HttpClient(
-            timeout=20.0,
+            timeout=10.0 if is_vercel else 20.0,
             max_retries=self.settings.max_retries,
             observability=self.observability,
         )
         return {
             ProviderName.DART: DartConnector(
-                self.settings.dart, http, cache_dir=self.settings.data_dir
+                self.settings.dart,
+                http,
+                cache_dir=self.settings.data_dir,
+                fetch_bodies=1 if is_vercel else 3,
             ),
             ProviderName.ECOS: EcosConnector(self.settings.ecos, http),
             ProviderName.KOSIS: KosisConnector(self.settings.kosis, http),
