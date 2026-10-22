@@ -223,7 +223,8 @@ class NimProvider(LlmProvider):
 
         last_error: Optional[Exception] = None
         budget = max_tokens
-        for attempt in range(1, self._max_retries + 3):
+        # max_retries는 추가 재시도 횟수이므로 0이면 정확히 한 번 호출한다.
+        for attempt in range(1, self._max_retries + 2):
             try:
                 payload = self._build_payload(model, system, user, budget, schema)
                 with httpx.Client(timeout=self._settings.timeout_seconds) as client:
@@ -268,7 +269,7 @@ class NimProvider(LlmProvider):
                 )
             except LlmError as exc:
                 # 추론이 예산을 다 쓴 경우에는 예산을 늘려 다시 시도한다.
-                if exc.retryable and attempt <= self._max_retries + 1:
+                if exc.retryable and attempt <= self._max_retries:
                     budget = min(int(budget * 2), 8192)
                     self._model_notes.append(
                         f"응답이 비어 있어 출력 토큰 예산을 {budget} 으로 늘려 재시도합니다."

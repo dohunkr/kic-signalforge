@@ -130,7 +130,9 @@ def plan(request: ResearchRequest) -> List[PlanItem]:
         )
 
     # 3) 데이터 소스 보강
-    if company and _has_any(haystack, _COMPANY_HINTS + ["실적", "공시", "재무", "매출"]):
+    # 기업 전망 질문에 '반도체/산업/시장' 같은 단어가 들어갔다는 이유만으로
+    # KOSIS의 무관한 통계를 붙이지 않는다. 기업이 특정되면 공시를 우선한다.
+    if company:
         items.append(
             PlanItem(
                 sub_question=f"{company}의 공시·재무 자료 확인",
@@ -148,7 +150,11 @@ def plan(request: ResearchRequest) -> List[PlanItem]:
                 keywords=["금리", "환율", "소비"],
             )
         )
-    if _has_any(haystack, _NATIONAL_HINTS):
+    explicit_national_data = _has_any(
+        haystack,
+        ["국가 통계", "국가데이터", "산업생산", "수출 통계", "수입 통계", "산업 통계"],
+    )
+    if _has_any(haystack, _NATIONAL_HINTS) and (company is None or explicit_national_data):
         items.append(
             PlanItem(
                 sub_question="관련 산업·국가 통계 확인",

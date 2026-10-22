@@ -79,19 +79,39 @@ def classify_with_llm(
         "근거 강도(strength)는 1(약)~3(강)입니다. "
         "주장은 이미 원문 대조가 끝난 항목이므로 인용문을 다시 옮기지 말고, "
         "claim_id 와 방향/강도/한 줄 근거만 출력하십시오. "
-        "답변은 JSON 배열만 출력하십시오."
+        '반드시 {"outlooks":[...]} 형태의 JSON 객체로 출력하십시오.'
     )
     payload = json.dumps([_claim_payload(c) for c in usable], ensure_ascii=False)
     user = (
         "아래 주장들을 분류하십시오.\n"
         "출력 형식: "
-        '[{"claim_id":"c001","direction":"up","strength":2,'
-        '"rationale":"한 줄 근거"}]\n\n'
+        '{"outlooks":[{"claim_id":"c001","direction":"up","strength":2,'
+        '"rationale":"한 줄 근거"}]}\n\n'
         f"{payload}"
     )
 
+    schema = {
+        "type": "object",
+        "properties": {
+            "outlooks": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "claim_id": {"type": "string"},
+                        "direction": {"type": "string", "enum": ["up", "down", "neutral"]},
+                        "strength": {"type": "integer", "minimum": 1, "maximum": 3},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["claim_id", "direction", "strength", "rationale"],
+                },
+            }
+        },
+        "required": ["outlooks"],
+    }
+
     try:
-        raw = llm.chat_json(system, user, max_tokens=max_tokens)
+        raw = llm.chat_json(system, user, max_tokens=max_tokens, schema=schema)
     except Exception as exc:  # noqa: BLE001
         notes.append(f"LLM 방향 판정 실패: {type(exc).__name__}")
         return [], notes
@@ -101,6 +121,12 @@ def classify_with_llm(
         items = raw.get("items") if isinstance(raw, dict) else None
     if not isinstance(items, list):
         items = raw.get("claims") if isinstance(raw, dict) else None
+    if not isinstance(items, list) and isinstance(raw, dict):
+        # 일부 OpenAI 호환 모델은 지정한 키 대신 다른 배열 키를 반환한다.
+        items = next(
+            (value for value in raw.values() if isinstance(value, list) and value and all(isinstance(x, dict) for x in value)),
+            None,
+        )
     if not isinstance(items, list):
         notes.append("LLM 이 방향 판정 결과를 JSON 배열로 반환하지 않았습니다.")
         return [], notes

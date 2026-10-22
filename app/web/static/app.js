@@ -1040,12 +1040,13 @@
       const ir = (payload.ir_urls || "").trim();
       if (ir) body.ir_urls = [ir];
       const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 270000);
+      // Vercel Hobby 요청이 장시간 매달려 사용자에게 4~5분 로딩으로 보이지 않게 제한한다.
+      timeoutId = setTimeout(() => controller.abort(), 75000);
       const requestStarted = Date.now();
       progressId = setInterval(() => {
         const bubble = thinking.querySelector(".bubble");
         const seconds = Math.floor((Date.now() - requestStarted) / 1000);
-        if (bubble && seconds >= 60) bubble.innerHTML = '<span class="spinner"></span> <span class="muted">조사가 진행 중입니다. ' + Math.floor(seconds / 60) + '분째 공개 자료와 AI 분석을 기다리고 있습니다…</span>';
+        if (bubble && seconds >= 20) bubble.innerHTML = '<span class="spinner"></span> <span class="muted">공개 자료와 AI를 확인하고 있습니다. ' + seconds + '초째 진행 중…</span>';
       }, 5000);
       const res = await fetch("/api/research", {
         method: "POST",
@@ -1095,7 +1096,7 @@
       thinking.remove();
       state.step = payload.balance ? "balance" : "welcome";
       const message = err.name === "AbortError"
-        ? "조사가 4분 30초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지되니 다시 시도해 주세요."
+        ? "조사가 75초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지됩니다. 잠시 후 다시 시도해 주세요."
         : "조사 중 오류가 발생했습니다: " + (err.message || "알 수 없는 오류");
       addMessage("assistant", esc(message));
     } finally {
