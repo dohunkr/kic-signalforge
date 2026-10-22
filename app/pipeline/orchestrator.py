@@ -131,7 +131,7 @@ class Orchestrator:
     def _build_connectors(self) -> Dict[ProviderName, Connector]:
         is_vercel = os.environ.get("VERCEL") == "1"
         http = HttpClient(
-            timeout=7.0 if is_vercel else 20.0,
+            timeout=5.0 if is_vercel else 20.0,
             max_retries=self.settings.max_retries,
             observability=self.observability,
         )

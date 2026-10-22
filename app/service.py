@@ -48,7 +48,7 @@ class ResearchService:
         self.settings = settings or get_settings()
         self.orchestrator = orchestrator or Orchestrator(self.settings, store=store)
         self._http = HttpClient(
-            timeout=7.0 if os.environ.get("VERCEL") == "1" else 20.0,
+            timeout=5.0 if os.environ.get("VERCEL") == "1" else 20.0,
             max_retries=self.settings.max_retries,
             observability=self.orchestrator.observability,
         )

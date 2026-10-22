@@ -220,11 +220,11 @@ def _collect_secrets() -> tuple[str, ...]:
 def load_settings() -> AppSettings:
     # Vercel 요청은 함수 실행 시간 안에 응답해야 하므로 느린 AI 재시도를 제한한다.
     is_vercel = _env("VERCEL") == "1"
-    nim_timeout = _env_float("NVIDIA_TIMEOUT_SECONDS", 12.0 if is_vercel else 45.0)
+    nim_timeout = _env_float("NVIDIA_TIMEOUT_SECONDS", 9.0 if is_vercel else 45.0)
     max_retries = _env_int("KIC_MAX_RETRIES", 0 if is_vercel else 2)
     max_run_seconds = _env_float("KIC_MAX_RUN_SECONDS", 60.0 if is_vercel else 90.0)
     if is_vercel:
-        nim_timeout = min(nim_timeout, 12.0)
+        nim_timeout = min(nim_timeout, 9.0)
         max_retries = 0
         max_run_seconds = min(max_run_seconds, 60.0)
 
