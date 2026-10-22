@@ -27,13 +27,10 @@ from .http_client import HttpClient
 
 log = get_logger(__name__)
 
-#: 수록주기 후보 (통계검색의 PRD_SE 와 조회 파라미터 prdSe 는 코드 체계가 다를 수 있다)
-_PERIOD_CANDIDATES = ["Y", "M", "Q", "A", "F", "IR"]
-
-#: 통계표 1건당 시도할 최대 HTTP 호출 수(쿼터 보호)
+#: 통계표의 필수 분류 단계(objL1~objL8)를 찾을 때 허용할 최대 호출 수.
+_MAX_CLASSIFICATION_LEVELS = 8
+#: 표 1건에서 주기/분류 조합을 탐색할 때의 호출 상한(쿼터 보호).
 _MAX_CALLS_PER_TABLE = 12
-#: 시도할 최대 수록주기 후보 수
-_MAX_PERIOD_CANDIDATES = 3
 
 
 class KosisConnector(Connector):
@@ -182,37 +179,39 @@ class KosisConnector(Connector):
         base = self._settings.base_url.rstrip("/")
         url = f"{base}/Param/statisticsParameterData.do"
 
-        # 검색 응답에는 PRD_SE 가 없으므로 후보를 순서대로 시도한다.
-        candidates = list(_PERIOD_CANDIDATES)
-        if table.get("prd_se"):
-            candidates = [table["prd_se"]] + [c for c in candidates if c != table["prd_se"]]
-        candidates = candidates[:_MAX_PERIOD_CANDIDATES]
+        # 검색 응답의 주기는 비어 있거나 표기 방식이 다른 경우가 있어
+        # 통계표 메타데이터(PRD_SE)를 먼저 조회한다.
+        periods = self._fetch_periods(table)
+        if not periods and table.get("prd_se"):
+            periods = [str(table["prd_se"]).strip()]
+        if not periods:
+            periods = ["Y", "M", "Q"]
 
-        items = self._fetch_items(table)
-        obj_codes = self._fetch_obj_codes(table)
         last_error: Optional[ConnectorFailure] = None
         calls = 0
-
-        for prd_se in candidates:
+        for prd_se in periods[:3]:
             start_de, end_de = self._period_range(request, table, prd_se)
-            for obj_l1, itm_id in self._param_combinations(table, items, obj_codes):
+            for depth in range(1, _MAX_CLASSIFICATION_LEVELS + 1):
                 if calls >= _MAX_CALLS_PER_TABLE:
                     break
                 calls += 1
+                params = self._build_params(table, prd_se, start_de, end_de, "ALL", "ALL")
+                # KOSIS 표는 필수 분류 단계 수가 서로 다르다. err=20이면
+                # 다음 objL 단계를 추가하고, 성공 여부를 다시 확인한다.
+                for level in range(2, depth + 1):
+                    params[f"objL{level}"] = "ALL"
                 try:
                     _, payload = self._http.get_json(
                         url,
                         provider=self.provider.value,
                         endpoint="statisticsParameterData.do",
-                        params=self._build_params(
-                            table, prd_se, start_de, end_de, obj_l1, itm_id
-                        ),
+                        params=params,
                     )
                 except ConnectorFailure as exc:
                     last_error = exc
                     if exc.code == ERR_QUOTA:
                         raise
-                    break  # 이 조합은 실패 -> 다른 조합 시도
+                    break
 
                 data = _coerce_json(payload)
                 err = str(data.get("err") or "")
@@ -222,29 +221,61 @@ class KosisConnector(Connector):
                         code,
                         message,
                         provider=self.provider.value,
-                        detail=f"KOSIS err={err} (prdSe={prd_se}, objL1={obj_l1}, itmId={itm_id})",
+                        detail=f"KOSIS err={err} (tblId={table['tbl_id']}, prdSe={prd_se}, depth={depth})",
                     )
                     if code == ERR_QUOTA:
                         raise last_error
-                    continue  # 같은 prdSe 에서 다른 조합 시도
+                    if err == "20" and depth < _MAX_CLASSIFICATION_LEVELS:
+                        continue
+                    break
 
                 rows = data.get("result") or []
-                if not rows:
-                    last_error = ConnectorFailure(
-                        ERR_NOT_FOUND,
-                        f"'{table['tbl_nm']}' 에서 데이터를 찾지 못했습니다(prdSe={prd_se}).",
-                        provider=self.provider.value,
-                        detail=f"tblId={table['tbl_id']}",
-                    )
-                    continue
-
-                source = self._build_source(table, rows, url, prd_se, start_de, end_de)
-                if source is not None:
-                    return source
+                if rows:
+                    source = self._build_source(table, rows, url, prd_se, start_de, end_de)
+                    if source is not None:
+                        return source
+                last_error = ConnectorFailure(
+                    ERR_NOT_FOUND,
+                    f"'{table['tbl_nm']}' 에서 해당 기간의 통계를 찾지 못했습니다.",
+                    provider=self.provider.value,
+                    detail=f"tblId={table['tbl_id']}, prdSe={prd_se}",
+                )
+                break
+            if calls >= _MAX_CALLS_PER_TABLE:
+                break
 
         if last_error is not None:
             raise last_error
         return None
+
+    def _fetch_periods(self, table: Dict[str, Any]) -> List[str]:
+        """통계표 메타데이터에서 실제 수록주기(PRD_SE)를 가져온다."""
+        base = self._settings.base_url.rstrip("/")
+        try:
+            _, payload = self._http.get_json(
+                f"{base}/statisticsData.do",
+                provider=self.provider.value,
+                endpoint="statisticsData.do",
+                params={
+                    "method": "getMeta",
+                    "type": "PRD",
+                    "apiKey": self._settings.api_key,
+                    "format": "json",
+                    "orgId": table["org_id"],
+                    "tblId": table["tbl_id"],
+                },
+            )
+        except ConnectorFailure:
+            return []
+        data = _coerce_json(payload)
+        periods = []
+        for row in data.get("result") or []:
+            if not isinstance(row, dict):
+                continue
+            value = str(row.get("PRD_SE") or row.get("prdSe") or "").strip()
+            if value and value not in periods:
+                periods.append(value)
+        return periods
 
     def _fetch_items(self, table: Dict[str, Any]) -> List[Dict[str, Any]]:
         """통계표의 항목(ITM) 목록을 가져온다(최대 1회 호출)."""

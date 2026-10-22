@@ -548,14 +548,22 @@
   function renderWarningsCard(briefing) {
     const warnings = briefing.uncertainties || [];
     const errors = briefing.errors || [];
-    const gapItems = (briefing.data_gaps || []).slice(0, 6);
+    const uniqueErrors = Array.from(
+      new Map(errors.map((e) => [`${e.provider}|${e.code}|${e.message}`, e])).values()
+    );
+    const errorGapKeys = new Set(
+      uniqueErrors.map((e) => `${e.provider}: ${e.message}`)
+    );
+    const gapItems = Array.from(new Set(briefing.data_gaps || []))
+      .filter((gap) => !Array.from(errorGapKeys).some((key) => gap.includes(key)))
+      .slice(0, 6);
 
     let html =
       '<section class="card"><p class="overline">UNCERTAINTY</p>' +
-      '<h3 class="card-title">불확실성 · 자료 상충 · 최신성</h3>' +
+      '<h3 class="card-title">불확실성 · 자료 공백 · 수집 상태</h3>' +
       '<p class="card-note">' +
       warnings.length +
-      "건의 경고</p>";
+      "건의 자료 경고</p>";
 
     if (warnings.length) {
       html +=
@@ -574,12 +582,12 @@
           .join("") +
         "</ul>";
     } else {
-      html += '<p class="card-note">등록된 경고가 없습니다. (근거가 충분하다는 뜻은 아닙니다.)</p>';
+      html += '<p class="card-note">자료 상충이나 최신성 경고가 확인되지 않았습니다. 근거가 충분하다는 뜻은 아닙니다.</p>';
     }
 
-    if (errors.length) {
-      html += '<div class="divider"></div><p class="overline">API ERRORS</p><ul class="warn-list">';
-      html += errors
+    if (uniqueErrors.length) {
+      html += '<div class="divider"></div><p class="overline">자료 수집 실패</p><ul class="warn-list">';
+      html += uniqueErrors
         .map(
           (e) =>
             '<li class="sev-critical"><span class="warn-kind">' +
