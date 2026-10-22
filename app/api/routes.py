@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -74,6 +75,7 @@ def health() -> Dict[str, Any]:
         "status": "ok",
         "service": "KIC SignalForge",
         "version": "0.2.0",
+        "build": (os.environ.get("VERCEL_GIT_COMMIT_SHA") or "local")[:7],
         "connectors": settings.connector_status(),
         "limits": {
             "max_run_seconds": settings.max_run_seconds,

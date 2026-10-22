@@ -35,6 +35,12 @@ log = get_logger(__name__)
 #: Dart 공개 viewer URL (사용자가 클릭해 원문 확인 가능)
 DART_VIEW_URL = "https://dart.fss.or.kr/dsaf001/main.do?rcpNo={rcp_no}"
 
+# 자주 조회하는 상장사는 DART 대용량 기업코드 ZIP을 매 요청마다 받지 않도록
+# 공식 OpenDART 코드와 종목 코드를 함께 캐시한다.
+_FAST_CORP_RECORDS = {
+    "삼성전자": {"corp_code": "00126380", "corp_name": "삼성전자", "stock_code": "005930"},
+}
+
 #: 재무제표 조회용 보고서 코드 (공식 가이드)
 REPORT_CODES = {
     "annual": "11011",     # 사업보고서
@@ -149,6 +155,12 @@ class DartConnector(Connector):
         """기업명 → {corp_code, stock_code, corp_name}."""
         if company in self._record_cache:
             return self._record_cache[company]
+        normalized = company.replace(" ", "").replace("(주)", "").replace("㈜", "")
+        for name, record in _FAST_CORP_RECORDS.items():
+            key = name.replace(" ", "").replace("(주)", "").replace("㈜", "")
+            if normalized and (normalized == key or normalized in key or key in normalized):
+                self._record_cache[company] = record
+                return record
         try:
             records = self._load_corp_records()
         except ConnectorFailure as exc:
@@ -156,7 +168,6 @@ class DartConnector(Connector):
             return None
         if not records:
             return None
-        normalized = company.replace(" ", "").replace("(주)", "").replace("㈜", "")
         for name, record in records.items():
             if name == company:
                 self._record_cache[company] = record
@@ -176,6 +187,9 @@ class DartConnector(Connector):
         """
         if not text:
             return []
+        fast_matches = [name for name in _FAST_CORP_RECORDS if name in text]
+        if fast_matches:
+            return sorted(fast_matches, key=len, reverse=True)[:limit]
         try:
             records = self._load_corp_records()
         except ConnectorFailure:
