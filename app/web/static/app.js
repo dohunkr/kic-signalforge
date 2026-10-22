@@ -250,6 +250,7 @@
 
     let html = '<div class="result">' + renderResultActions();
     if (briefing.changeSummary) html += renderChangeCard(briefing.changeSummary);
+    html += renderAiStatusCard(briefing);
     html += renderOutlookCard(outlook, briefing);
     if (simulation) html += renderSimulationCard(simulation);
     html += renderAuditCard(briefing);
@@ -299,6 +300,12 @@
 
   function renderChangeCard(change) {
     return '<section class="card change-card"><p class="overline">UPDATE DIFF</p><h3 class="card-title">이전 분석과 달라진 점</h3><p>새로 연결된 자료 <strong>' + Number(change.added || 0) + '건</strong> · 상승 확률 변화 <strong>' + (Number(change.probabilityDelta) > 0 ? "+" : "") + Number(change.probabilityDelta || 0) + '%p</strong></p>' + ((change.titles || []).length ? '<ul>' + change.titles.map((x) => '<li>' + esc(x) + '</li>').join("") + '</ul>' : '<p class="card-note">새로 연결된 출처가 없습니다.</p>') + '</section>';
+  }
+
+  function renderAiStatusCard(briefing) {
+    const usage = briefing.llm || {};
+    const used = Boolean(usage.used) || (briefing.claim_outlooks || []).some((item) => item.method === "llm");
+    return '<section class="card ai-status-card ' + (used ? 'is-working' : 'is-fallback') + '"><p class="overline">AI CONNECTION</p><h3 class="card-title">' + (used ? 'AI가 원문을 분석했습니다' : 'AI 응답 없이 규칙 기반으로 분석했습니다') + '</h3><p class="card-note">' + (used ? '원문 인용 검증과 AI 방향 판정을 적용했습니다. NVIDIA NIM ' + esc(usage.model || '모델') + (usage.reason ? ' · ' + esc(usage.reason) : '') : esc(usage.reason || '검증할 원문이 부족하거나 AI 응답이 없어 결정론적 결과를 사용했습니다.')) + '</p>' + (!used ? '<p class="card-note">Vercel 환경변수의 NVIDIA_API_KEY와 선택 모델의 무료 endpoint 사용 가능 여부를 확인해 주세요. AI 미사용 결과는 아래에서 구분해 확인할 수 있습니다.</p>' : '') + '</section>';
   }
 
   function renderRedTeamCard(briefing) {
@@ -1033,7 +1040,7 @@
       const ir = (payload.ir_urls || "").trim();
       if (ir) body.ir_urls = [ir];
       const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 210000);
+      timeoutId = setTimeout(() => controller.abort(), 270000);
       const requestStarted = Date.now();
       progressId = setInterval(() => {
         const bubble = thinking.querySelector(".bubble");
@@ -1088,7 +1095,7 @@
       thinking.remove();
       state.step = payload.balance ? "balance" : "welcome";
       const message = err.name === "AbortError"
-        ? "조사가 3분 30초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지되니 다시 시도해 주세요."
+        ? "조사가 4분 30초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지되니 다시 시도해 주세요."
         : "조사 중 오류가 발생했습니다: " + (err.message || "알 수 없는 오류");
       addMessage("assistant", esc(message));
     } finally {

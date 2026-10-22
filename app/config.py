@@ -229,6 +229,10 @@ def load_settings() -> AppSettings:
         max_run_seconds = min(max_run_seconds, 60.0)
 
     nim_key = _env("NVIDIA_API_KEY") or None
+    nim_model = _env("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b")
+    # Vercel Hobby 에서는 짧고 무료 endpoint 가 있는 경량 모델을 우선한다.
+    if is_vercel and nim_model == "nvidia/nemotron-3-ultra-550b-a55b":
+        nim_model = "nvidia/nemotron-3.5-lightning-30b-a3b"
     dart_key = _env("DART_API_KEY") or None
     ecos_key = _env("ECOS_API_KEY") or None
     kosis_key = _env("KOSIS_API_KEY") or None
@@ -242,7 +246,7 @@ def load_settings() -> AppSettings:
         nim=NimSettings(
             api_key=nim_key,
             base_url=_env("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            model=_env("NVIDIA_MODEL", "nvidia/nemotron-3-ultra-550b-a55b"),
+            model=nim_model,
             timeout_seconds=nim_timeout,
         ),
         dart=DartSettings(api_key=dart_key),

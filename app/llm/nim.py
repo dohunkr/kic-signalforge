@@ -44,10 +44,10 @@ log = get_logger(__name__)
 #: 실제 호출로 확인된 모델 우선순위(2026-10-21, 표준 계정 기준).
 #: 목록에 있더라도 계정 미제공이면 404 이므로, 호출 가능 여부를 별도로 확인한다.
 PREFERRED_MODELS: List[str] = [
-    "nvidia/nemotron-3-ultra-550b-a55b",
     "nvidia/nemotron-3.5-lightning-30b-a3b",
     "deepseek-ai/deepseek-v4.1-flash",
     "openai/gpt-oss-20b",
+    "nvidia/nemotron-3-ultra-550b-a55b",
 ]
 
 #: 추론(reasoning) 모델이 토큰 예산을 다 쓰지 않도록 thinking 을 끈다.
@@ -137,7 +137,8 @@ class NimProvider(LlmProvider):
             **_NO_THINKING,
         }
         try:
-            with httpx.Client(timeout=min(self._settings.timeout_seconds, 30.0)) as client:
+            # Probe 는 연결성만 확인하므로 무거운 모델도 여기서 오래 기다리지 않는다.
+            with httpx.Client(timeout=min(self._settings.timeout_seconds, 6.0)) as client:
                 resp = client.post(
                     f"{self._settings.base_url.rstrip('/')}/chat/completions",
                     headers=self._headers(),
@@ -165,21 +166,19 @@ class NimProvider(LlmProvider):
         if self._resolved_model:
             return self._resolved_model
 
-        listed = self._list_models()
+        # /models 전체 목록에는 수십~수백 개가 포함될 수 있다. 이를 전부 순차 probe
+        # 하면 Vercel 무료 함수 제한에 걸리므로, 설정 모델과 짧은 대체 후보만 확인한다.
         candidates: List[str] = []
-        if self._settings.model:
+        if self._settings.model and self._settings.model not in self._rejected_models:
             candidates.append(self._settings.model)
         for candidate in PREFERRED_MODELS:
-            if candidate not in candidates:
-                candidates.append(candidate)
-        for candidate in listed:
-            if candidate not in candidates:
+            if candidate not in candidates and candidate not in self._rejected_models:
                 candidates.append(candidate)
 
         if not candidates:
             candidates = [self._settings.model or PREFERRED_MODELS[0]]
 
-        for candidate in candidates:
+        for candidate in candidates[:4]:
             ok, reason = self._probe_model(candidate)
             if ok:
                 if candidate != self._settings.model:
