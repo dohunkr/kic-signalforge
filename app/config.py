@@ -222,11 +222,11 @@ def load_settings() -> AppSettings:
     is_vercel = _env("VERCEL") == "1"
     nim_timeout = _env_float("NVIDIA_TIMEOUT_SECONDS", 20.0 if is_vercel else 45.0)
     max_retries = _env_int("KIC_MAX_RETRIES", 0 if is_vercel else 2)
-    max_run_seconds = _env_float("KIC_MAX_RUN_SECONDS", 75.0 if is_vercel else 90.0)
+    max_run_seconds = _env_float("KIC_MAX_RUN_SECONDS", 60.0 if is_vercel else 90.0)
     if is_vercel:
-        nim_timeout = min(nim_timeout, 25.0)
+        nim_timeout = min(nim_timeout, 20.0)
         max_retries = 0
-        max_run_seconds = min(max_run_seconds, 90.0)
+        max_run_seconds = min(max_run_seconds, 60.0)
 
     nim_key = _env("NVIDIA_API_KEY") or None
     dart_key = _env("DART_API_KEY") or None

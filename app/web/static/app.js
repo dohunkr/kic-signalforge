@@ -1033,7 +1033,7 @@
       const ir = (payload.ir_urls || "").trim();
       if (ir) body.ir_urls = [ir];
       const controller = new AbortController();
-      timeoutId = setTimeout(() => controller.abort(), 270000);
+      timeoutId = setTimeout(() => controller.abort(), 210000);
       const requestStarted = Date.now();
       progressId = setInterval(() => {
         const bubble = thinking.querySelector(".bubble");
@@ -1088,7 +1088,7 @@
       thinking.remove();
       state.step = payload.balance ? "balance" : "welcome";
       const message = err.name === "AbortError"
-        ? "조사가 4분 30초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지되니 다시 시도해 주세요."
+        ? "조사가 3분 30초 안에 끝나지 않아 연결을 종료했습니다. 질문과 잔고는 유지되니 다시 시도해 주세요."
         : "조사 중 오류가 발생했습니다: " + (err.message || "알 수 없는 오류");
       addMessage("assistant", esc(message));
     } finally {
